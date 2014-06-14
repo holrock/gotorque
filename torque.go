@@ -20,10 +20,40 @@ type Torque struct {
 	serverID   int    // connection descriptor
 }
 
+// Attribute is wrapper of pbs_ifl attibute.
+type Attribute struct {
+	name     string
+	resource string
+	value    string
+	op       string
+}
+
+// Queue.
+type Queue struct {
+	name string
+	attr map[string]Attribute
+}
+
+// batchOp is mapping enum to string.
+var batchOp = map[C.enum_batch_op]string{
+	C.SET:   "SET",
+	C.UNSET: "UNSET",
+	C.INCR:  "INCR",
+	C.DECR:  "DECR",
+	C.EQ:    "EQ",
+	C.NE:    "NE",
+	C.GE:    "GE",
+	C.GT:    "GT",
+	C.LE:    "LE",
+	C.LT:    "ET",
+	C.DFLT:  "DFLT",
+	C.MERGE: "MERGE",
+}
+
 // GetLastError return last error.
 func GetLastError() error {
 	en := C.pbs_errno
-	estr := C.pbs_strerror(en)
+	estr := C.pbs_strerror(en) // static string
 	return errors.New(C.GoString(estr))
 }
 
@@ -80,4 +110,35 @@ func (t *Torque) StatServer() (attr map[string]string, err error) {
 		attr[C.GoString(at.name)] = C.GoString(at.value)
 	}
 	return attr, nil
+}
+
+// StatQeueu return stat all queue.
+func (t *Torque) StatQue() ([]Queue, error) {
+	bs := C.pbs_statque(C.int(t.serverID), nil, nil, nil)
+	if bs == nil {
+		return nil, GetLastError()
+	}
+	defer C.pbs_statfree(bs)
+
+	queues := make([]Queue, 0, 1)
+
+	for top := bs; top != nil; top = top.next {
+		q := Queue{}
+		q.name = C.GoString(top.name)
+		q.attr = make(map[string]Attribute)
+
+		for attr := top.attribs; attr != nil; attr = attr.next {
+			op := C.enum_batch_op(attr.op)
+			sop := batchOp[op]
+			name := C.GoString(attr.name)
+			q.attr[name] = Attribute{
+				name:     name,
+				value:    C.GoString(attr.value),
+				resource: C.GoString(attr.resource),
+				op:       sop}
+		}
+		queues = append(queues, q)
+	}
+
+	return queues, nil
 }

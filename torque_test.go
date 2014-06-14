@@ -25,3 +25,15 @@ func TestStatServer(t *testing.T) {
 			attr["name"], torque.ServerName())
 	}
 }
+
+func TestStatQueue(t *testing.T) {
+	torque, err := Connect()
+	defer torque.Disconnect()
+	queue, err := torque.StatQue()
+	if err != nil {
+		t.Error("cannot get server stat")
+	}
+	if len(queue) == 0 {
+		t.Error("empty queue infomation")
+	}
+}
