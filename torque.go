@@ -11,6 +11,7 @@ import "C"
 
 import (
 	"errors"
+	"strings"
 	"unsafe"
 )
 
@@ -38,6 +39,13 @@ type Server struct {
 type Queue struct {
 	name string
 	attr map[string]Attribute
+}
+
+// Node data.
+type Node struct {
+	name   string
+	attr   map[string]Attribute
+	status map[string]string
 }
 
 // batchOp is mapping enum to string.
@@ -143,6 +151,34 @@ func (t *Torque) StatQue() ([]Queue, error) {
 	return queues, nil
 }
 
+// StatNode return stat all nodes.
+func (t *Torque) StatNode() ([]Node, error) {
+	bs := C.pbs_statnode(C.int(t.serverID), nil, nil, nil)
+	if bs == nil {
+		return nil, GetLastError()
+	}
+	defer C.pbs_statfree(bs)
+
+	nodes := make([]Node, 0, 1)
+
+	for cur := bs; cur != nil; cur = cur.next {
+		n := Node{}
+		n.name = C.GoString(cur.name)
+		n.attr = make(map[string]Attribute)
+
+		for name, attr := range attrlToAttributeMap(cur.attribs) {
+			n.attr[name] = attr
+		}
+
+		status := n.attr["status"]
+		delete(n.attr, "status")
+		n.status = statusToMap(status.value)
+
+		nodes = append(nodes, n)
+	}
+	return nodes, nil
+}
+
 func attrlToAttributeMap(attrl *C.struct_attrl) map[string]Attribute {
 	attrmap := make(map[string]Attribute)
 
@@ -157,4 +193,16 @@ func attrlToAttributeMap(attrl *C.struct_attrl) map[string]Attribute {
 			op:       sop}
 	}
 	return attrmap
+}
+
+func statusToMap(status string) map[string]string {
+	stmap := make(map[string]string)
+
+	for _, s := range strings.Split(status, ",") {
+		kv := strings.Split(s, "=")
+		if len(kv) == 2 {
+			stmap[kv[0]] = kv[1]
+		}
+	}
+	return stmap
 }
