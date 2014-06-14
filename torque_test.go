@@ -49,3 +49,15 @@ func TestStatNode(t *testing.T) {
 		t.Error("empty node infomation")
 	}
 }
+
+func TestStatJob(t *testing.T) {
+	torque, err := Connect()
+	defer torque.Disconnect()
+	job, err := torque.StatJob()
+	if err != nil {
+		t.Error("cannot get server stat")
+	}
+	if len(job) == 0 {
+		t.Error("empty job infomation")
+	}
+}

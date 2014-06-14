@@ -48,6 +48,13 @@ type Node struct {
 	status map[string]string
 }
 
+// Job data.
+type Job struct {
+	name         string
+	attr         map[string]Attribute
+	variableList map[string]string
+}
+
 // batchOp is mapping enum to string.
 var batchOp = map[C.enum_batch_op]string{
 	C.SET:   "SET",
@@ -172,11 +179,40 @@ func (t *Torque) StatNode() ([]Node, error) {
 
 		status := n.attr["status"]
 		delete(n.attr, "status")
-		n.status = statusToMap(status.value)
+		n.status = kvlistToMap(status.value)
 
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
+}
+
+// StatJob return stat all jobs.
+func (t *Torque) StatJob() ([]Job, error) {
+	bs := C.pbs_statjob(C.int(t.serverID), nil, nil, nil)
+	if bs == nil {
+		return nil, GetLastError()
+	}
+	defer C.pbs_statfree(bs)
+
+	jobs := make([]Job, 0, 1)
+
+	for cur := bs; cur != nil; cur = cur.next {
+		j := Job{}
+		j.name = C.GoString(cur.name)
+		j.attr = make(map[string]Attribute)
+
+		for name, attr := range attrlToAttributeMap(cur.attribs) {
+			j.attr[name] = attr
+		}
+
+		vl := j.attr["Variable_List"]
+		delete(j.attr, "Variable_List")
+		j.variableList = kvlistToMap(vl.value)
+
+		jobs = append(jobs, j)
+	}
+
+	return jobs, nil
 }
 
 func attrlToAttributeMap(attrl *C.struct_attrl) map[string]Attribute {
@@ -186,7 +222,11 @@ func attrlToAttributeMap(attrl *C.struct_attrl) map[string]Attribute {
 		op := C.enum_batch_op(attr.op)
 		sop := batchOp[op]
 		name := C.GoString(attr.name)
-		attrmap[name] = Attribute{
+		key := name
+		if attr.resource != nil {
+			key += "." + C.GoString(attr.resource)
+		}
+		attrmap[key] = Attribute{
 			name:     name,
 			value:    C.GoString(attr.value),
 			resource: C.GoString(attr.resource),
@@ -195,14 +235,14 @@ func attrlToAttributeMap(attrl *C.struct_attrl) map[string]Attribute {
 	return attrmap
 }
 
-func statusToMap(status string) map[string]string {
-	stmap := make(map[string]string)
+func kvlistToMap(kvlist string) map[string]string {
+	strmap := make(map[string]string)
 
-	for _, s := range strings.Split(status, ",") {
+	for _, s := range strings.Split(kvlist, ",") {
 		kv := strings.Split(s, "=")
 		if len(kv) == 2 {
-			stmap[kv[0]] = kv[1]
+			strmap[kv[0]] = kv[1]
 		}
 	}
-	return stmap
+	return strmap
 }
