@@ -28,7 +28,13 @@ type Attribute struct {
 	op       string
 }
 
-// Queue.
+// Server data.
+type Server struct {
+	name string
+	attr map[string]Attribute
+}
+
+// Queue data.
 type Queue struct {
 	name string
 	attr map[string]Attribute
@@ -96,20 +102,21 @@ func (t *Torque) ServerName() string {
 }
 
 // StatServer return statserver.
-func (t *Torque) StatServer() (attr map[string]string, err error) {
+func (t *Torque) StatServer() (Server, error) {
 	bs := C.pbs_statserver(C.int(t.serverID), nil, nil)
 	if bs == nil {
-		return nil, GetLastError()
+		return Server{}, GetLastError()
 	}
 	defer C.pbs_statfree(bs)
 
-	attr = make(map[string]string)
-	attr["name"] = C.GoString(bs.name)
+	srv := Server{name: C.GoString(bs.name)}
 
-	for at := bs.attribs; at != nil; at = at.next {
-		attr[C.GoString(at.name)] = C.GoString(at.value)
+	srv.attr = make(map[string]Attribute)
+	for name, attr := range attrlToAttributeMap(bs.attribs) {
+		srv.attr[name] = attr
 	}
-	return attr, nil
+
+	return srv, nil
 }
 
 // StatQeueu return stat all queue.
@@ -122,23 +129,32 @@ func (t *Torque) StatQue() ([]Queue, error) {
 
 	queues := make([]Queue, 0, 1)
 
-	for top := bs; top != nil; top = top.next {
+	for cur := bs; cur != nil; cur = cur.next {
 		q := Queue{}
-		q.name = C.GoString(top.name)
+		q.name = C.GoString(cur.name)
 		q.attr = make(map[string]Attribute)
 
-		for attr := top.attribs; attr != nil; attr = attr.next {
-			op := C.enum_batch_op(attr.op)
-			sop := batchOp[op]
-			name := C.GoString(attr.name)
-			q.attr[name] = Attribute{
-				name:     name,
-				value:    C.GoString(attr.value),
-				resource: C.GoString(attr.resource),
-				op:       sop}
+		for name, attr := range attrlToAttributeMap(cur.attribs) {
+			q.attr[name] = attr
 		}
 		queues = append(queues, q)
 	}
 
 	return queues, nil
+}
+
+func attrlToAttributeMap(attrl *C.struct_attrl) map[string]Attribute {
+	attrmap := make(map[string]Attribute)
+
+	for attr := attrl; attr != nil; attr = attr.next {
+		op := C.enum_batch_op(attr.op)
+		sop := batchOp[op]
+		name := C.GoString(attr.name)
+		attrmap[name] = Attribute{
+			name:     name,
+			value:    C.GoString(attr.value),
+			resource: C.GoString(attr.resource),
+			op:       sop}
+	}
+	return attrmap
 }
