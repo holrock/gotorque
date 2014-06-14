@@ -93,10 +93,7 @@ func ConnectServer(serverName string) (*Torque, error) {
 		return nil, GetLastError()
 	}
 
-	return &Torque{
-			serverName: serverName,
-			serverID:   con},
-		nil
+	return &Torque{serverName: serverName, serverID: con}, nil
 }
 
 // Connect open connection to default server.
@@ -187,8 +184,15 @@ func (t *Torque) StatNode() ([]Node, error) {
 }
 
 // StatJob return stat all jobs.
-func (t *Torque) StatJob() ([]Job, error) {
-	bs := C.pbs_statjob(C.int(t.serverID), nil, nil, nil)
+// if id is not empty, return specified job
+func (t *Torque) StatJob(jobid string) ([]Job, error) {
+	var cid *C.char
+	if len(jobid) != 0 {
+		cid = C.CString(jobid)
+		defer C.free(unsafe.Pointer(cid))
+	}
+
+	bs := C.pbs_statjob(C.int(t.serverID), cid, nil, nil)
 	if bs == nil {
 		return nil, GetLastError()
 	}
